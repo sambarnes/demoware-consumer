@@ -7,6 +7,19 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// StatsExporter is a struct that provides an introspection point for
+// other goroutines to check in on the current stats of the given goroutine
+type StatsExporter struct {
+	requestChannel chan chan interface{}
+}
+
+func (s StatsExporter) CurrentStats() (interface{}, bool) {
+	responseChannel := make(chan interface{})
+	s.requestChannel <- responseChannel
+	currentStats, ok := <-responseChannel
+	return currentStats, ok
+}
+
 // LoadStats keeps track of the min and max load seen
 type LoadStats struct {
 	n   int
@@ -30,25 +43,45 @@ func (s *LoadStats) Update(newLoadMetric float64) error {
 
 // HandleLoadAverageMetric handles all Metric payloads of type "load_avg"
 // and updates LoadStats
-func HandleLoadAverageMetric(done <-chan interface{}, metricStream <-chan interface{}) {
+func HandleLoadAverageMetric(done <-chan interface{}, metricStream <-chan interface{}) StatsExporter {
 	log.Debug(fmt.Sprintf("Starting %v handler...", LoadAverageMetric))
 	processedLogMsg := fmt.Sprintf("Processed %v metric", LoadAverageMetric)
 
-	stats := LoadStats{}
-	for metric := range orDone(done, metricStream) {
-		load := metric.(float64)
-		err := stats.Update(load)
-		if err != nil {
-			log.Error(err)
-			continue
+	exporter := StatsExporter{requestChannel: make(chan chan interface{})}
+	go func() {
+		defer close(exporter.requestChannel)
+
+		stats := LoadStats{}
+		for {
+			select {
+			case <-done:
+				return
+			case v, ok := <-metricStream:
+				if ok == false {
+					return
+				}
+				metric := v.(float64)
+				err := stats.Update(metric)
+				if err != nil {
+					log.Error(err)
+					continue
+				}
+				log.WithFields(log.Fields{
+					"newValue": metric,
+					"max":      stats.Max,
+					"min":      stats.Min,
+					"n":        stats.n,
+				}).Trace(processedLogMsg)
+			case responseChannel, ok := <-exporter.requestChannel:
+				if ok == false {
+					return
+				}
+				responseChannel <- stats
+			}
 		}
-		log.WithFields(log.Fields{
-			"newValue": load,
-			"max":      stats.Max,
-			"min":      stats.Min,
-			"n":        stats.n,
-		}).Trace(processedLogMsg)
-	}
+	}()
+
+	return exporter
 }
 
 // CPUUsageStats keeps track of the running average CPU usage per core
@@ -81,24 +114,44 @@ func (s *CPUUsageStats) Update(usages []float64) error {
 
 // HandleCPUUsageMetric handles all Metric payloads of type "cpu_usage" by
 // keeping track of the running average usage for each CPU
-func HandleCPUUsageMetric(done <-chan interface{}, metricStream <-chan interface{}) {
+func HandleCPUUsageMetric(done <-chan interface{}, metricStream <-chan interface{}) StatsExporter {
 	log.Debug(fmt.Sprintf("Starting %v handler...", CPUUsageMetric))
 	processedLogMsg := fmt.Sprintf("Processed %v metric", CPUUsageMetric)
 
-	stats := CPUUsageStats{}
-	for metric := range orDone(done, metricStream) {
-		usages := toFloat64Array(metric.([]interface{}))
-		err := stats.Update(usages)
-		if err != nil {
-			log.Error(err)
-			continue
+	exporter := StatsExporter{requestChannel: make(chan chan interface{})}
+	go func() {
+		defer close(exporter.requestChannel)
+
+		stats := CPUUsageStats{}
+		for {
+			select {
+			case <-done:
+				return
+			case v, ok := <-metricStream:
+				if ok == false {
+					return
+				}
+				metric := toFloat64Array(v.([]interface{}))
+				err := stats.Update(metric)
+				if err != nil {
+					log.Error(err)
+					continue
+				}
+				log.WithFields(log.Fields{
+					"newValues": metric,
+					"averages":  stats.Averages,
+					"n":         stats.n,
+				}).Trace(processedLogMsg)
+			case responseChannel, ok := <-exporter.requestChannel:
+				if ok == false {
+					return
+				}
+				responseChannel <- stats
+			}
 		}
-		log.WithFields(log.Fields{
-			"newValues": metric,
-			"averages":  stats.Averages,
-			"n":         stats.n,
-		}).Trace(processedLogMsg)
-	}
+	}()
+
+	return exporter
 }
 
 // KernelUpgradeStats keeps track of the most recent "last_kernel_upgrade"
@@ -128,21 +181,42 @@ func (s *KernelUpgradeStats) Update(newTimestamp string) error {
 
 // HandleLastKernelUpgradeMetric handles all Metric payloads of type
 // "last_kernel_upgrade" by keeping track of the most recent timestamp
-func HandleLastKernelUpgradeMetric(done <-chan interface{}, metricStream <-chan interface{}) {
+func HandleLastKernelUpgradeMetric(done <-chan interface{}, metricStream <-chan interface{}) StatsExporter {
 	log.Debug(fmt.Sprintf("Starting %v handler...", LastKernelUpgradeMetric))
 	processedLogMsg := fmt.Sprintf("Processed %v metric", LastKernelUpgradeMetric)
 
-	stats := KernelUpgradeStats{}
-	for metric := range orDone(done, metricStream) {
-		err := stats.Update(metric.(string))
-		if err != nil {
-			log.Error(err)
-			continue
+	exporter := StatsExporter{requestChannel: make(chan chan interface{})}
+	go func() {
+		defer close(exporter.requestChannel)
+
+		stats := KernelUpgradeStats{}
+		for {
+			select {
+			case <-done:
+				return
+			case v, ok := <-metricStream:
+				if ok == false {
+					return
+				}
+				metric := v.(string)
+				err := stats.Update(metric)
+				if err != nil {
+					log.Error(err)
+					continue
+				}
+				log.WithFields(log.Fields{
+					"newValue":   metric,
+					"mostRecent": stats.MostRecent,
+					"n":          stats.n,
+				}).Trace(processedLogMsg)
+			case responseChannel, ok := <-exporter.requestChannel:
+				if ok == false {
+					return
+				}
+				responseChannel <- stats
+			}
 		}
-		log.WithFields(log.Fields{
-			"newValue":   metric,
-			"mostRecent": stats.MostRecent,
-			"n":          stats.n,
-		}).Trace(processedLogMsg)
-	}
+	}()
+
+	return exporter
 }

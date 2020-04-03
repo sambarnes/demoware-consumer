@@ -34,30 +34,6 @@ func take(done <-chan interface{}, valueStream <-chan interface{}, num int) <-ch
 	return takeStream
 }
 
-// orDone wraps the given channel handling the done condition for the caller,
-// enhancing for loop readability when ranging over a channel
-func orDone(done, c <-chan interface{}) <-chan interface{} {
-	valStream := make(chan interface{})
-	go func() {
-		defer close(valStream)
-		for {
-			select {
-			case <-done:
-				return
-			case v, ok := <-c:
-				if ok == false {
-					return
-				}
-				select {
-				case valStream <- v:
-				case <-done:
-				}
-			}
-		}
-	}()
-	return valStream
-}
-
 // toResult wraps the given <-chan interface{} as a <-chan Result
 func toResult(done <-chan interface{}, valueStream <-chan interface{}) <-chan Result {
 	wrappedStream := make(chan Result)

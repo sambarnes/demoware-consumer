@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/sambarnes/demoware-consumer/metrics"
 	log "github.com/sirupsen/logrus"
+	"time"
 )
 
 func main() {
@@ -14,12 +15,42 @@ func main() {
 	defer close(done)
 	ingestedMetrics := metrics.RunGenerator(done)
 	metricStreamsByType := metrics.RunDispatcher(done, ingestedMetrics)
-	go metrics.HandleLoadAverageMetric(done, metricStreamsByType[metrics.LoadAverageMetric])
-	go metrics.HandleCPUUsageMetric(done, metricStreamsByType[metrics.CPUUsageMetric])
-	go metrics.HandleLastKernelUpgradeMetric(done, metricStreamsByType[metrics.LastKernelUpgradeMetric])
 
-	select {
-	// TODO: run a server for outsiders to query current stats of those handler goroutines,
-	//		 or make metrics available to prometheus (if available for the project)
+	loadStatsExporter := metrics.HandleLoadAverageMetric(done, metricStreamsByType[metrics.LoadAverageMetric])
+	cpuUsageStatsExporter := metrics.HandleCPUUsageMetric(done, metricStreamsByType[metrics.CPUUsageMetric])
+	kernelUpgradeStatsExporter := metrics.HandleLastKernelUpgradeMetric(done, metricStreamsByType[metrics.LastKernelUpgradeMetric])
+	for {
+		select {
+		case <-time.After(5 * time.Second):
+
+			if stats, ok := loadStatsExporter.CurrentStats(); ok {
+				loadStats := stats.(metrics.LoadStats)
+				log.WithFields(log.Fields{
+					"max": loadStats.Max,
+					"min": loadStats.Min,
+				}).Info("Current LoadStats")
+			} else {
+				log.Error("Failed to read from LoadStats Exporter")
+			}
+
+			if stats, ok := cpuUsageStatsExporter.CurrentStats(); ok {
+				cpuStats := stats.(metrics.CPUUsageStats)
+				log.WithFields(log.Fields{
+					"average_cpu_usage": cpuStats.Averages,
+				}).Info("Current CPUUsageStats")
+			} else {
+				log.Error("Failed to read from CPUUsageStats Exporter")
+			}
+
+			if stats, ok := kernelUpgradeStatsExporter.CurrentStats(); ok {
+				kernelStats := stats.(metrics.KernelUpgradeStats)
+				log.WithFields(log.Fields{
+					"most_recent_upgrade": kernelStats.MostRecent,
+				}).Info("Current KernelUpgradeStats")
+			} else {
+				log.Error("Failed to read from KernelUpgradeStats Exporter")
+			}
+
+		}
 	}
 }
