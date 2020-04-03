@@ -1,9 +1,10 @@
 package main
 
 import (
+	"time"
+
 	"github.com/sambarnes/demoware-consumer/metrics"
 	log "github.com/sirupsen/logrus"
-	"time"
 )
 
 func main() {
