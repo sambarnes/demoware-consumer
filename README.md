@@ -10,6 +10,7 @@ I completed the core functionality in about 4 hours, polished everything for ano
     * I imagine I'd utilize `context`s or buffered channels, but would need to investigate more and see what the best practice is.
 * Per-component introspection endpoints so we can query/monitor their internal state
     * Prometheus would probably be best if that was available to the project already. Otherwise, I thought of having each handler return a channel of channels, so that callers could send a channel to the handler and the handler would send back the current stats over that, but then it sounded like it could get hairy with writing to a potentially closed channel. Again, would just need more time to evaluate options.
+    * **EDIT: gave it a quick try [in this branch](https://github.com/sambarnes/demoware-consumer/pull/1)**
 * Integration/end-to-end testing
     * This would have been made easier once the per-component introspection was introduced, so I was putting it off thinking I'd have time to do it.
 * Configuration management / commandline flags
