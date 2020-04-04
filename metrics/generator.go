@@ -18,13 +18,15 @@ type Result struct {
 }
 
 type Metric struct {
-	Type    MetricType `json:"type"`
-	Payload struct {
-		Value interface{} `json:"value"`
-	} `json:"payload"`
+	Type    MetricType    `json:"type"`
+	Payload MetricPayload `json:"payload"`
 }
 
 type MetricType string
+
+type MetricPayload struct {
+	Value interface{} `json:"value"`
+}
 
 const (
 	LoadAverageMetric       MetricType = "load_avg"
