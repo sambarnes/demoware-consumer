@@ -10,13 +10,23 @@ func main() {
 	log.SetLevel(log.DebugLevel)
 	metrics.DemowareMetricsURL = "http://localhost:8080/metrics"
 
+	metricHandlers := map[metrics.MetricType]func(done <-chan interface{}, metricStream <-chan interface{}){
+		metrics.LoadAverageMetric:       metrics.HandleLoadAverageMetric,
+		metrics.CPUUsageMetric:          metrics.HandleCPUUsageMetric,
+		metrics.LastKernelUpgradeMetric: metrics.HandleLastKernelUpgradeMetric,
+	}
+	var metricSubscriptions []metrics.MetricType
+	for k, _ := range metricHandlers {
+		metricSubscriptions = append(metricSubscriptions, k)
+	}
+
 	done := make(chan interface{})
 	defer close(done)
 	ingestedMetrics := metrics.RunGenerator(done)
-	metricStreamsByType := metrics.RunDispatcher(done, ingestedMetrics)
-	go metrics.HandleLoadAverageMetric(done, metricStreamsByType[metrics.LoadAverageMetric])
-	go metrics.HandleCPUUsageMetric(done, metricStreamsByType[metrics.CPUUsageMetric])
-	go metrics.HandleLastKernelUpgradeMetric(done, metricStreamsByType[metrics.LastKernelUpgradeMetric])
+	metricStreamsByType := metrics.RunDispatcher(done, metricSubscriptions, ingestedMetrics)
+	for metricType, handler := range metricHandlers {
+		go handler(done, metricStreamsByType[metricType])
+	}
 
 	select {
 	// TODO: run a server for outsiders to query current stats of those handler goroutines,

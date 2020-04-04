@@ -7,14 +7,13 @@ import (
 // RunDispatcher routes the individual metrics of ingested Result structs to
 // their payload-specific handlers and returns a map of the channels that will
 // feed those handlers
-func RunDispatcher(done <-chan interface{}, resultStream <-chan Result) map[MetricType]chan interface{} {
+func RunDispatcher(done <-chan interface{}, metricSubscriptions []MetricType, resultStream <-chan Result) map[MetricType]chan interface{} {
 	log.Debug("Starting dispatcher...")
-	metricStreamsByType := map[MetricType]chan interface{}{
-		LoadAverageMetric:       make(chan interface{}),
-		CPUUsageMetric:          make(chan interface{}),
-		LastKernelUpgradeMetric: make(chan interface{}),
-	}
 
+	metricStreamsByType := make(map[MetricType]chan interface{})
+	for _, v := range metricSubscriptions {
+		metricStreamsByType[v] = make(chan interface{})
+	}
 	go func() {
 		defer func() {
 			for _, stream := range metricStreamsByType {
@@ -22,15 +21,17 @@ func RunDispatcher(done <-chan interface{}, resultStream <-chan Result) map[Metr
 			}
 		}()
 
-		for result := range resultStream {
-			if result.Error != nil {
-				log.Error(result.Error)
-				continue
-			}
+		for {
 			select {
 			case <-done:
 				return
-			default:
+			case result, ok := <-resultStream:
+				if ok == false {
+					return
+				} else if result.Error != nil {
+					log.Error(result.Error)
+					continue
+				}
 				dispatch(result.Metrics, metricStreamsByType)
 			}
 		}
