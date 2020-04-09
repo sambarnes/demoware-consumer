@@ -2,16 +2,59 @@ package metrics
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 )
+
+type Handler interface {
+	Handle(metric interface{}) error
+}
+
+// RunMetricStreamHandler pulls metrics off of the metricStream channel and
+// passes them to a handler for processing, stopping when a signal is sent over
+// the done channel
+func RunMetricStreamHandler(done <-chan interface{}, metricStream <-chan interface{}, handler Handler) {
+	for metric := range orDone(done, metricStream) {
+		if err := handler.Handle(metric); err != nil {
+			log.Error(err)
+			continue
+		}
+	}
+}
+
+// LoadMetricsHandler handles all "load_avg" metrics and manages LoadStats
+type LoadMetricsHandler struct {
+	mu    sync.RWMutex
+	Stats LoadStats
+}
 
 // LoadStats keeps track of the min and max load seen
 type LoadStats struct {
 	n   int
 	Min float64
 	Max float64
+}
+
+// Handle updates the LoadStats with a new metric
+func (h *LoadMetricsHandler) Handle(metric interface{}) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	load, ok := metric.(float64)
+	if ok == false {
+		return fmt.Errorf("failed to cast metric to float64")
+	}
+	return h.Stats.Update(load)
+}
+
+// CurrentStats returns the current LoadStats in a concurrent-safe manner
+func (h LoadMetricsHandler) CurrentStats() LoadStats {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	return h.Stats
 }
 
 // Update determines if the newLoadMetric is the new maximum or minimum and if
@@ -28,27 +71,10 @@ func (s *LoadStats) Update(newLoadMetric float64) error {
 	return nil
 }
 
-// HandleLoadAverageMetric handles all Metric payloads of type "load_avg"
-// and updates LoadStats
-func HandleLoadAverageMetric(done <-chan interface{}, metricStream <-chan interface{}) {
-	log.Debug(fmt.Sprintf("Starting %v handler...", LoadAverageMetric))
-	processedLogMsg := fmt.Sprintf("Processed %v metric", LoadAverageMetric)
-
-	stats := LoadStats{}
-	for metric := range orDone(done, metricStream) {
-		load := metric.(float64)
-		err := stats.Update(load)
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-		log.WithFields(log.Fields{
-			"newValue": load,
-			"max":      stats.Max,
-			"min":      stats.Min,
-			"n":        stats.n,
-		}).Trace(processedLogMsg)
-	}
+// CPUMetricsHandler handles all "cpu_usage" metrics and manages CPUUsageStats
+type CPUMetricsHandler struct {
+	mu    sync.RWMutex
+	Stats CPUUsageStats
 }
 
 // CPUUsageStats keeps track of the running average CPU usage per core
@@ -57,6 +83,30 @@ type CPUUsageStats struct {
 	cpuCount int
 	totals   []float64
 	Averages []float64
+}
+
+// Handle updates the CPUUsageStats with a new metric
+func (h *CPUMetricsHandler) Handle(metric interface{}) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	tmp, ok := metric.([]interface{})
+	if ok == false {
+		return fmt.Errorf("failed to cast metric to []interface{}")
+	}
+	usages, err := toFloat64Array(tmp)
+	if err != nil {
+		return err
+	}
+	return h.Stats.Update(usages)
+}
+
+// CurrentStats returns the current CPUUsageStats in a concurrent-safe manner
+func (h CPUMetricsHandler) CurrentStats() CPUUsageStats {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	return h.Stats
 }
 
 // Update calculates the new average CPU usage for each core
@@ -79,33 +129,36 @@ func (s *CPUUsageStats) Update(usages []float64) error {
 	return nil
 }
 
-// HandleCPUUsageMetric handles all Metric payloads of type "cpu_usage" by
-// keeping track of the running average usage for each CPU
-func HandleCPUUsageMetric(done <-chan interface{}, metricStream <-chan interface{}) {
-	log.Debug(fmt.Sprintf("Starting %v handler...", CPUUsageMetric))
-	processedLogMsg := fmt.Sprintf("Processed %v metric", CPUUsageMetric)
-
-	stats := CPUUsageStats{}
-	for metric := range orDone(done, metricStream) {
-		usages := toFloat64Array(metric.([]interface{}))
-		err := stats.Update(usages)
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-		log.WithFields(log.Fields{
-			"newValues": metric,
-			"averages":  stats.Averages,
-			"n":         stats.n,
-		}).Trace(processedLogMsg)
-	}
+// KernelMetricsHandler handles all "last_kernel_upgrade" metrics and manages KernelUpgradeStats
+type KernelMetricsHandler struct {
+	mu    sync.RWMutex
+	Stats KernelUpgradeStats
 }
 
-// KernelUpgradeStats keeps track of the most recent "last_kernel_upgrade"
-// timestamp
+// KernelUpgradeStats keeps track of the most recent timestamp seen
 type KernelUpgradeStats struct {
 	n          int
 	MostRecent time.Time
+}
+
+// Handle updates the KernelUpgradeStats with a new metric
+func (h *KernelMetricsHandler) Handle(metric interface{}) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	timestamp, ok := metric.(string)
+	if ok == false {
+		return fmt.Errorf("failed to cast metric to string")
+	}
+	return h.Stats.Update(timestamp)
+}
+
+// CurrentStats returns the current KernelUpgradeStats in a concurrent-safe manner
+func (h KernelMetricsHandler) CurrentStats() KernelUpgradeStats {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	return h.Stats
 }
 
 // Update takes a new timestamp string and compares it against the current
@@ -124,25 +177,4 @@ func (s *KernelUpgradeStats) Update(newTimestamp string) error {
 		s.MostRecent = newTime
 	}
 	return nil
-}
-
-// HandleLastKernelUpgradeMetric handles all Metric payloads of type
-// "last_kernel_upgrade" by keeping track of the most recent timestamp
-func HandleLastKernelUpgradeMetric(done <-chan interface{}, metricStream <-chan interface{}) {
-	log.Debug(fmt.Sprintf("Starting %v handler...", LastKernelUpgradeMetric))
-	processedLogMsg := fmt.Sprintf("Processed %v metric", LastKernelUpgradeMetric)
-
-	stats := KernelUpgradeStats{}
-	for metric := range orDone(done, metricStream) {
-		err := stats.Update(metric.(string))
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-		log.WithFields(log.Fields{
-			"newValue":   metric,
-			"mostRecent": stats.MostRecent,
-			"n":          stats.n,
-		}).Trace(processedLogMsg)
-	}
 }
