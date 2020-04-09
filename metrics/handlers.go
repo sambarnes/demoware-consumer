@@ -27,7 +27,7 @@ func RunMetricStreamHandler(done <-chan interface{}, metricStream <-chan interfa
 // LoadMetricsHandler handles all "load_avg" metrics and manages LoadStats
 type LoadMetricsHandler struct {
 	mu    sync.RWMutex
-	Stats LoadStats
+	stats LoadStats
 }
 
 // LoadStats keeps track of the min and max load seen
@@ -46,7 +46,7 @@ func (h *LoadMetricsHandler) Handle(metric interface{}) error {
 	if ok == false {
 		return fmt.Errorf("failed to cast metric to float64")
 	}
-	return h.Stats.Update(load)
+	return h.stats.Update(load)
 }
 
 // CurrentStats returns the current LoadStats in a concurrent-safe manner
@@ -54,7 +54,7 @@ func (h LoadMetricsHandler) CurrentStats() LoadStats {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	return h.Stats
+	return h.stats
 }
 
 // Update determines if the newLoadMetric is the new maximum or minimum and if
@@ -74,7 +74,7 @@ func (s *LoadStats) Update(newLoadMetric float64) error {
 // CPUMetricsHandler handles all "cpu_usage" metrics and manages CPUUsageStats
 type CPUMetricsHandler struct {
 	mu    sync.RWMutex
-	Stats CPUUsageStats
+	stats CPUUsageStats
 }
 
 // CPUUsageStats keeps track of the running average CPU usage per core
@@ -98,7 +98,7 @@ func (h *CPUMetricsHandler) Handle(metric interface{}) error {
 	if err != nil {
 		return err
 	}
-	return h.Stats.Update(usages)
+	return h.stats.Update(usages)
 }
 
 // CurrentStats returns the current CPUUsageStats in a concurrent-safe manner
@@ -106,7 +106,8 @@ func (h CPUMetricsHandler) CurrentStats() CPUUsageStats {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	return h.Stats
+	// TODO: return deep copy of struct
+	return h.stats
 }
 
 // Update calculates the new average CPU usage for each core
@@ -132,7 +133,7 @@ func (s *CPUUsageStats) Update(usages []float64) error {
 // KernelMetricsHandler handles all "last_kernel_upgrade" metrics and manages KernelUpgradeStats
 type KernelMetricsHandler struct {
 	mu    sync.RWMutex
-	Stats KernelUpgradeStats
+	stats KernelUpgradeStats
 }
 
 // KernelUpgradeStats keeps track of the most recent timestamp seen
@@ -150,7 +151,7 @@ func (h *KernelMetricsHandler) Handle(metric interface{}) error {
 	if ok == false {
 		return fmt.Errorf("failed to cast metric to string")
 	}
-	return h.Stats.Update(timestamp)
+	return h.stats.Update(timestamp)
 }
 
 // CurrentStats returns the current KernelUpgradeStats in a concurrent-safe manner
@@ -158,7 +159,7 @@ func (h KernelMetricsHandler) CurrentStats() KernelUpgradeStats {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	return h.Stats
+	return h.stats
 }
 
 // Update takes a new timestamp string and compares it against the current

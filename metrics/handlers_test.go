@@ -8,6 +8,37 @@ import (
 	"time"
 )
 
+func TestLoadMetricsHandler_CurrentStats(t *testing.T) {
+	handler := LoadMetricsHandler{}
+	statsCopy := handler.CurrentStats()
+	statsCopy.Max = 10
+	newCopy := handler.CurrentStats()
+	if newCopy.Max != 0 {
+		t.Errorf("internal stats modified by external code")
+	}
+}
+
+func TestCPUMetricsHandler_CurrentStats(t *testing.T) {
+	handler := CPUMetricsHandler{stats: CPUUsageStats{Averages: []float64{0}}}
+	statsCopy := handler.CurrentStats()
+	statsCopy.Averages[0] = 1
+	newCopy := handler.CurrentStats()
+	if newCopy.Averages[0] != 0 {
+		t.Errorf("internal stats modified by external code")
+	}
+}
+
+func TestKernelMetricsHandler_CurrentStats(t *testing.T) {
+	handler := KernelMetricsHandler{}
+	statsCopy := handler.CurrentStats()
+	statsCopy.MostRecent = time.Now()
+	newCopy := handler.CurrentStats()
+	zeroTimestamp := time.Time{}
+	if newCopy.MostRecent != zeroTimestamp {
+		t.Errorf("internal stats modified by external code")
+	}
+}
+
 func TestLoadStats_Update(t *testing.T) {
 	testCases := []struct {
 		Metrics     []float64
