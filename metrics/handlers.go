@@ -32,7 +32,7 @@ type LoadMetricsHandler struct {
 
 // LoadStats keeps track of the min and max load seen
 type LoadStats struct {
-	n   int
+	N   int
 	Min float64
 	Max float64
 }
@@ -60,8 +60,8 @@ func (h LoadMetricsHandler) CurrentStats() LoadStats {
 // Update determines if the newLoadMetric is the new maximum or minimum and if
 // so, changes that value
 func (s *LoadStats) Update(newLoadMetric float64) error {
-	s.n++
-	if s.n == 1 {
+	s.N++
+	if s.N == 1 {
 		s.Min, s.Max = newLoadMetric, newLoadMetric
 	} else if newLoadMetric < s.Min {
 		s.Min = newLoadMetric
@@ -79,9 +79,9 @@ type CPUMetricsHandler struct {
 
 // CPUUsageStats keeps track of the running average CPU usage per core
 type CPUUsageStats struct {
-	n        int
 	cpuCount int
 	totals   []float64
+	N        int
 	Averages []float64
 }
 
@@ -112,20 +112,20 @@ func (h CPUMetricsHandler) CurrentStats() CPUUsageStats {
 
 // Update calculates the new average CPU usage for each core
 func (s *CPUUsageStats) Update(usages []float64) error {
-	if 0 < s.n && len(usages) != s.cpuCount {
+	if 0 < s.N && len(usages) != s.cpuCount {
 		// Assumption: constant CPU count for all requests
 		return fmt.Errorf("invalid length of usages array: expected %v, got %v", s.cpuCount, len(usages))
 	}
 
-	s.n++
-	if s.n == 1 {
+	s.N++
+	if s.N == 1 {
 		s.cpuCount = len(usages)
 		s.totals = make([]float64, s.cpuCount)
 		s.Averages = make([]float64, s.cpuCount)
 	}
 	for i, usage := range usages {
 		s.totals[i] += usage
-		s.Averages[i] = s.totals[i] / float64(s.n)
+		s.Averages[i] = s.totals[i] / float64(s.N)
 	}
 	return nil
 }
@@ -138,7 +138,7 @@ type KernelMetricsHandler struct {
 
 // KernelUpgradeStats keeps track of the most recent timestamp seen
 type KernelUpgradeStats struct {
-	n          int
+	N          int
 	MostRecent time.Time
 }
 
@@ -170,7 +170,7 @@ func (s *KernelUpgradeStats) Update(newTimestamp string) error {
 		return fmt.Errorf("unable to parse newTimestamp: %v", err)
 	}
 
-	s.n++
+	s.N++
 	if newTime.After(s.MostRecent) {
 		// Assumption: "keep track of the most recent timestamp" means comparing timestamps rather
 		// than just storing the timestamp that was received most recently. Even though in the case

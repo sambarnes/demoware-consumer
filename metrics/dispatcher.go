@@ -4,51 +4,59 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// RunDispatcher routes the individual metrics of ingested Result structs to
-// their payload-specific handlers and returns a map of the channels that will
-// feed those handlers
-func RunDispatcher(done <-chan interface{}, metricSubscriptions []MetricType, resultStream <-chan Result) map[MetricType]chan interface{} {
-	log.Debug("Starting dispatcher...")
-
-	metricStreamsByType := make(map[MetricType]chan interface{})
-	for _, v := range metricSubscriptions {
-		metricStreamsByType[v] = make(chan interface{})
-	}
-	go func() {
-		defer func() {
-			for _, stream := range metricStreamsByType {
-				close(stream)
-			}
-		}()
-
-		for {
-			select {
-			case <-done:
-				return
-			case result, ok := <-resultStream:
-				if ok == false {
-					return
-				} else if result.Error != nil {
-					log.Error(result.Error)
-					continue
-				}
-				dispatch(result.Metrics, metricStreamsByType)
-			}
-		}
-	}()
-	return metricStreamsByType
+// MetricDispatcher routes Metric values to their payload specific handlers
+type MetricDispatcher interface {
+	Dispatch([]Metric)
 }
 
-// dispatch sends the payload of each metric in a batch to its designated handler
-func dispatch(metricsBatch []Metric, metricStreamsByType map[MetricType]chan interface{}) {
-	for _, metric := range metricsBatch {
-		if metricStream, ok := metricStreamsByType[metric.Type]; ok {
-			metricStream <- metric.Payload.Value
-		} else {
-			log.WithFields(log.Fields{
-				"type":    metric.Type,
-				"payload": metric.Payload,
-			}).Warn("Unknown Metric type")
+// ResultStreamDispatcher is a Dispatcher based on channels
+type ResultStreamDispatcher struct {
+	subscriptions map[MetricType]chan interface{}
+}
+
+// Subscribe returns a new channel such that all metrics of that type will be
+// sent through that channel
+func (d *ResultStreamDispatcher) Subscribe(t MetricType) <-chan interface{} {
+	if d.subscriptions == nil {
+		d.subscriptions = make(map[MetricType]chan interface{})
+	}
+	d.subscriptions[t] = make(chan interface{})
+	return d.subscriptions[t]
+}
+
+// Close closes the Dispatcher's Subscription channels
+func (d *ResultStreamDispatcher) Close() {
+	for _, stream := range d.subscriptions {
+		close(stream)
+	}
+}
+
+// Run pulls Results off the resultStream and dispatches each batch of Metrics
+func (d ResultStreamDispatcher) Run(done <-chan interface{}, resultStream <-chan Result) {
+	for {
+		select {
+		case <-done:
+			return
+		case result, ok := <-resultStream:
+			if ok == false {
+				return
+			} else if result.Error != nil {
+				// TODO: evaluate if errors should be routed to their own handler
+				log.Error(result.Error)
+				continue
+			}
+			d.Dispatch(result.Metrics)
 		}
+	}
+}
+
+// Dispatch sends the payload of each metric in a batch to its designated handler
+func (d ResultStreamDispatcher) Dispatch(metricsBatch []Metric) {
+	for _, metric := range metricsBatch {
+		metricStream, ok := d.subscriptions[metric.Type]
+		if ok == false {
+			continue
+		}
+		metricStream <- metric.Payload.Value
 	}
 }

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // TODO: better configuration mangagement for remote API url
@@ -35,9 +33,6 @@ const (
 )
 
 func runGenerator(done <-chan interface{}) <-chan interface{} {
-	log.WithFields(log.Fields{
-		"demowareMetricsURL": DemowareMetricsURL,
-	}).Debug("Starting metric ingestion...")
 	return repeatFn(done, ingest)
 }
 
@@ -47,7 +42,7 @@ func RunGenerator(done <-chan interface{}) <-chan Result {
 	return toResult(done, runGenerator(done))
 }
 
-// RunGeneratorN calls the metrics API n times and returns a channel that
+// RunGeneratorN calls the metrics API N times and returns a channel that
 // streams those responses as Result structs
 func RunGeneratorN(done <-chan interface{}, n int) <-chan Result {
 	return toResult(done, take(done, runGenerator(done), n))

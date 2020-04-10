@@ -80,8 +80,8 @@ func TestLoadStats_Update(t *testing.T) {
 					t.Fatalf("unexpected error in stats.Update(): %v", err)
 				}
 			}
-			if stats.n != len(testCase.Metrics) {
-				t.Errorf("unexpected stats.n: %v != %v (observed, expected)", stats.n, len(testCase.Metrics))
+			if stats.N != len(testCase.Metrics) {
+				t.Errorf("unexpected stats.N: %v != %v (observed, expected)", stats.N, len(testCase.Metrics))
 			}
 			if stats.Max != testCase.ExpectedMax {
 				t.Errorf("unexpected stats.Max: %v != %v (observed, expected)", stats.Max, testCase.ExpectedMax)
@@ -132,8 +132,8 @@ func TestCPUUsageStats_Update(t *testing.T) {
 					t.Fatalf("unexpected error in stats.Update(): %v", err)
 				}
 			}
-			if stats.n != len(testCase.Metrics) {
-				t.Errorf("unexpected stats.n: %v != %v (observed, expected)", stats.n, len(testCase.Metrics))
+			if stats.N != len(testCase.Metrics) {
+				t.Errorf("unexpected stats.N: %v != %v (observed, expected)", stats.N, len(testCase.Metrics))
 			}
 			if !reflect.DeepEqual(stats.totals, testCase.ExpectedTotals) {
 				t.Errorf("unexpected stats.totals: %v != %v (observed, expected)", stats.totals, testCase.ExpectedTotals)
@@ -157,8 +157,8 @@ func TestCPUUsageStats_Update(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error in stats.Update(), got none")
 		}
-		if stats.n != 1 {
-			t.Errorf("unexpected stats.n: should not increment when an error is raised in stats.Update")
+		if stats.N != 1 {
+			t.Errorf("unexpected stats.N: should not increment when an error is raised in stats.Update")
 		}
 	})
 }
@@ -211,8 +211,8 @@ func TestKernelUpgradeStats_Update(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error in stats.Update(), got none")
 		}
-		if stats.n != 0 {
-			t.Errorf("unexpected stats.n: should not increment when an error is raised in stats.Update")
+		if stats.N != 0 {
+			t.Errorf("unexpected stats.N: should not increment when an error is raised in stats.Update")
 		}
 	})
 }
