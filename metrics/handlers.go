@@ -106,8 +106,13 @@ func (h CPUMetricsHandler) CurrentStats() CPUUsageStats {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	// TODO: return deep copy of struct
-	return h.stats
+	// TODO: evaluate use of a deep copy library
+	return CPUUsageStats{
+		cpuCount: h.stats.cpuCount,
+		totals:   append([]float64{}, h.stats.totals...),
+		N:        h.stats.N,
+		Averages: append([]float64{}, h.stats.Averages...),
+	}
 }
 
 // Update calculates the new average CPU usage for each core
