@@ -1,5 +1,7 @@
 package metrics
 
+import "fmt"
+
 // repeatFn is a helper metrics function that calls the function passed to it
 // indefinitely until told to stop
 func repeatFn(done <-chan interface{}, fn func() interface{}) <-chan interface{} {
@@ -75,10 +77,14 @@ func toResult(done <-chan interface{}, valueStream <-chan interface{}) <-chan Re
 }
 
 // toFloat64Array converts the given []interface{} to []float64
-func toFloat64Array(arr []interface{}) []float64 {
+func toFloat64Array(arr []interface{}) ([]float64, error) {
 	result := make([]float64, len(arr))
 	for i, x := range arr {
-		result[i] = x.(float64)
+		f, ok := x.(float64)
+		if ok == false {
+			return nil, fmt.Errorf("failed to cast element to float64")
+		}
+		result[i] = f
 	}
-	return result
+	return result, nil
 }
