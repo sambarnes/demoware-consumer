@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/sambarnes/demoware-consumer/metrics"
 	log "github.com/sirupsen/logrus"
 )
@@ -10,26 +12,50 @@ func main() {
 	log.SetLevel(log.DebugLevel)
 	metrics.DemowareMetricsURL = "http://localhost:8080/metrics"
 
-	metricHandlers := map[metrics.MetricType]func(done <-chan interface{}, metricStream <-chan interface{}){
-		metrics.LoadAverageMetric:       metrics.HandleLoadAverageMetric,
-		metrics.CPUUsageMetric:          metrics.HandleCPUUsageMetric,
-		metrics.LastKernelUpgradeMetric: metrics.HandleLastKernelUpgradeMetric,
-	}
-	var metricSubscriptions []metrics.MetricType
-	for k, _ := range metricHandlers {
-		metricSubscriptions = append(metricSubscriptions, k)
+	dispatcher := metrics.ResultStreamDispatcher{}
+	defer dispatcher.Close()
+
+	loadMetricsHandler := &metrics.LoadMetricsHandler{}
+	cpuMetricsHandler := &metrics.CPUMetricsHandler{}
+	kernelMetricsHandler := &metrics.KernelMetricsHandler{}
+	metricSubscriptions := map[metrics.Handler]<-chan interface{}{
+		loadMetricsHandler:   dispatcher.Subscribe(metrics.LoadAverageMetric),
+		cpuMetricsHandler:    dispatcher.Subscribe(metrics.CPUUsageMetric),
+		kernelMetricsHandler: dispatcher.Subscribe(metrics.LastKernelUpgradeMetric),
 	}
 
 	done := make(chan interface{})
 	defer close(done)
 	ingestedMetrics := metrics.RunGenerator(done)
-	metricStreamsByType := metrics.RunDispatcher(done, metricSubscriptions, ingestedMetrics)
-	for metricType, handler := range metricHandlers {
-		go handler(done, metricStreamsByType[metricType])
+	go dispatcher.Run(done, ingestedMetrics)
+	for handler, stream := range metricSubscriptions {
+		go metrics.RunMetricStreamHandler(done, stream, handler)
 	}
 
-	select {
-	// TODO: run a server for outsiders to query current stats of those handler goroutines,
-	//		 or make metrics available to prometheus (if available for the project)
+introspectionLoop:
+	for {
+		select {
+		case <-done:
+			break introspectionLoop
+		case <-time.After(5 * time.Second):
+			loadStats := loadMetricsHandler.CurrentStats()
+			log.WithFields(log.Fields{
+				"n":   loadStats.N,
+				"min": loadStats.Min,
+				"max": loadStats.Max,
+			}).Debug("Current LoadStats")
+
+			cpuStats := cpuMetricsHandler.CurrentStats()
+			log.WithFields(log.Fields{
+				"n":        cpuStats.N,
+				"averages": cpuStats.Averages,
+			}).Debug("Current CPUUsageStats")
+
+			kernelStats := kernelMetricsHandler.CurrentStats()
+			log.WithFields(log.Fields{
+				"n":           kernelStats.N,
+				"most_recent": kernelStats.MostRecent,
+			}).Debug("Current KernelUpgradeStats")
+		}
 	}
 }
